@@ -7,17 +7,16 @@ incluye tareas y horas, total estimado, equipo recomendado y duración.
 ## Requisitos
 
 - Python 3.11 o superior.
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/).
 - Una clave de API de OpenAI o Anthropic.
 
 ## Instalación y ejecución
 
-Desde este directorio (`estimador-cag`), crea y activa un entorno virtual e
-instala las dependencias:
+Desde este directorio (`estimador-cag`), instala las dependencias del proyecto
+y las herramientas de prueba con `uv`:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install fastapi "uvicorn[standard]" pydantic-settings openai anthropic python-dotenv
+uv sync --group dev
 ```
 
 Copia `.env.example` a `.env` y configura el proveedor, su clave y un nombre de
@@ -36,7 +35,7 @@ clave del proveedor seleccionado.
 Inicia el servidor desde `estimador-cag`:
 
 ```bash
-uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload
 ```
 
 La API estará disponible en `http://127.0.0.1:8000`. La documentación
@@ -54,7 +53,8 @@ Comprueba que la API está en ejecución:
 
 ### `POST /api/v1/estimate`
 
-Envía una transcripción no vacía como JSON:
+Envía una transcripción no vacía como JSON. Hay un ejemplo listo para probar en
+[`data/transcripcion_reunion.txt`](data/transcripcion_reunion.txt):
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/estimate \
@@ -70,5 +70,22 @@ La respuesta contiene la estimación generada, el modelo y el proveedor:
   "model": "gpt-4o-mini",
   "provider": "openai"
 }
-
 ```
+
+## Contexto de estimaciones
+
+La API inyecta tres ejemplos estáticos definidos en
+[`app/context/examples.py`](app/context/examples.py) en cada petición. Los
+costes de esos ejemplos son orientativos y se calculan con una tarifa ficticia
+de USD 50 por hora; no representan precios comerciales.
+
+## Pruebas y validación automática
+
+Ejecuta las pruebas localmente sin llamar a OpenAI ni Anthropic:
+
+```bash
+uv run pytest
+```
+
+GitHub Actions ejecuta estas pruebas automáticamente en cada push y pull
+request.

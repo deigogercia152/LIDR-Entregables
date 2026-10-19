@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     llm_provider: Literal["openai", "anthropic"] = "openai"
-    llm_model: str = Field(min_length=1)
+    llm_model: str = Field(default="gpt-4o-mini", min_length=1)
     app_env: str = "development"
     log_level: str = "INFO"
 
