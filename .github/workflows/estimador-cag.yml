@@ -1,0 +1,26 @@
+name: Estimador CAG CI
+
+on:
+  push:
+    paths:
+      - "estimador-cag/**"
+      - ".github/workflows/estimador-cag.yml"
+  pull_request:
+    paths:
+      - "estimador-cag/**"
+      - ".github/workflows/estimador-cag.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: estimador-cag
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: uv sync --group dev
+      - run: uv run pytest

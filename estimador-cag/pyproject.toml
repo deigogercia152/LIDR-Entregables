@@ -5,10 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-	"fastapi",
-	"uvicorn[standard]",
-	"pydantic-settings",
-	"openai",
-	"anthropic",
-	"python-dotenv",
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic-settings",
+    "openai",
+    "anthropic",
+    "python-dotenv",
+]
+
+[dependency-groups]
+dev = [
+    "httpx",
+    "pytest",
 ]
