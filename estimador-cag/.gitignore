@@ -10,3 +10,6 @@ wheels/
 .venv
 *.env
 uv.lock
+
+# Streamlit secrets
+.streamlit/secrets.toml

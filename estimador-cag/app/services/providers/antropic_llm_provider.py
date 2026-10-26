@@ -1,6 +1,8 @@
+from collections.abc import Iterator
+
 from anthropic import Anthropic
 
-from .i_llm_provider import ILLMProvider
+from .i_llm_provider import ILLMProvider, LLMUsage
 
 
 class AnthropicLLMProvider(ILLMProvider):
@@ -27,3 +29,19 @@ class AnthropicLLMProvider(ILLMProvider):
 		if not text:
 			raise RuntimeError("Anthropic devolvió una respuesta sin contenido de texto.")
 		return text
+
+	def stream_message(self, system_message: str, user_message: str) -> Iterator[str]:
+		self.last_usage = None
+		with self.client.messages.stream(
+			model=self.model,
+			max_tokens=self.max_tokens,
+			system=system_message,
+			messages=[{"role": "user", "content": user_message}],
+		) as stream:
+			yield from stream.text_stream
+			usage = stream.get_final_message().usage
+		self.last_usage = LLMUsage(
+			model=self.model,
+			input_tokens=usage.input_tokens,
+			output_tokens=usage.output_tokens,
+		)

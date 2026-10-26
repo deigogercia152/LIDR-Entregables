@@ -72,6 +72,32 @@ La respuesta contiene la estimación generada, el modelo y el proveedor:
 }
 ```
 
+## Interfaz web (Streamlit)
+
+Además de la API, el proyecto incluye una interfaz de chat en
+[`streamlit_app.py`](streamlit_app.py). Llama directamente a la capa de
+servicios, así que no hace falta tener uvicorn levantado. Desde
+`estimador-cag`:
+
+```bash
+uv run streamlit run streamlit_app.py
+```
+
+Se abre en `http://localhost:8501`. Pega una transcripción (por ejemplo, la de
+[`data/transcripcion_reunion.txt`](data/transcripcion_reunion.txt)) y la
+estimación se irá mostrando en streaming. Cada mensaje se estima de forma
+independiente con el mismo system prompt y los mismos ejemplos que el endpoint;
+el historial se mantiene en pantalla durante la sesión.
+
+El panel lateral muestra el system prompt activo, las estimaciones de ejemplo
+inyectadas y las métricas de la última llamada (modelo, tokens de entrada y
+salida, tiempo de respuesta). El botón "Nueva conversación" vacía el historial.
+
+La configuración se lee de `.env`. Como alternativa, puedes copiar
+`.streamlit/secrets.toml.example` a `.streamlit/secrets.toml` (ignorado en git);
+sus valores tienen prioridad sobre `.env` salvo que la variable ya exista en el
+entorno.
+
 ## Contexto de estimaciones
 
 La API inyecta tres ejemplos estáticos definidos en

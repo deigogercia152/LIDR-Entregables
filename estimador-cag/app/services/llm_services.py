@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+
 from app.config import settings
 from app.context.examples import get_estimation_examples
 from app.services.providers.antropic_llm_provider import AnthropicLLMProvider
@@ -67,11 +69,29 @@ def process_estimation_request(meeting_summary: str) -> str:
     system_message = build_system_message()
     user_message = build_user_message(meeting_summary)
 
-    provider = _get_llm_provider()
+    provider = get_llm_provider()
     return provider.process_message(system_message, user_message)
 
+def stream_estimation(meeting_summary: str) -> tuple[ILLMProvider, Iterator[str]]:
+    """
+    Igual que process_estimation_request, pero devuelve la estimación en streaming.
 
-def _get_llm_provider() -> ILLMProvider:
+    Args:
+        meeting_summary (str): Resumen de la reunión con el cliente.
+
+    Returns:
+        tuple[ILLMProvider, Iterator[str]]: El proveedor (para leer `last_usage`
+        al agotar el iterador) y los fragmentos de texto según llegan.
+    """
+
+    system_message = build_system_message()
+    user_message = build_user_message(meeting_summary)
+
+    provider = get_llm_provider()
+    return provider, provider.stream_message(system_message, user_message)
+
+
+def get_llm_provider() -> ILLMProvider:
     provider_name = settings.llm_provider
     model = settings.llm_model
     if provider_name == "openai":
