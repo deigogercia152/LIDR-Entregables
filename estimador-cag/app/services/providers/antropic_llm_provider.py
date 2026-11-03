@@ -10,7 +10,7 @@ class AnthropicLLMProvider(ILLMProvider):
 		self,
 		api_key: str,
 		model: str,
-		max_tokens: int = 2048,
+		max_tokens: int = 16000,
 	) -> None:
 		self.client = Anthropic(api_key=api_key)
 		self.model = model
@@ -27,7 +27,9 @@ class AnthropicLLMProvider(ILLMProvider):
 			block.text for block in response.content if getattr(block, "type", None) == "text"
 		)
 		if not text:
-			raise RuntimeError("Anthropic devolvió una respuesta sin contenido de texto.")
+			raise RuntimeError(
+				f"Anthropic devolvió una respuesta sin contenido de texto (stop_reason={response.stop_reason})."
+			)
 		return text
 
 	def stream_message(self, system_message: str, user_message: str) -> Iterator[str]:

@@ -10,7 +10,7 @@ class OpenAILLMProvider(ILLMProvider):
 		self,
 		api_key: str,
 		model: str,
-		max_tokens: int = 2048,
+		max_tokens: int = 16000,
 	) -> None:
 		self.client = OpenAI(api_key=api_key)
 		self.model = model
