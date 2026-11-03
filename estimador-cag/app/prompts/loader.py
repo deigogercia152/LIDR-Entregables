@@ -1,9 +1,13 @@
+import hashlib
 from functools import lru_cache
 from pathlib import Path
 
+import structlog
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from app.schemas import EstimationRequest
+
+logger = structlog.get_logger(__name__)
 
 ESTIMATION_PROMPTS_DIR = Path(__file__).resolve().parent / "estimation"
 DEFAULT_PROMPT_VERSION = "v1"
@@ -30,7 +34,6 @@ def _get_environment(version: str) -> Environment:
         trim_blocks=True,
         lstrip_blocks=True,
         autoescape=False,
-        keep_trailing_newline=False,
     )
 
 
@@ -51,6 +54,17 @@ def render_estimation_prompt(
     environment = _get_environment(version)
     context = request.model_dump(mode="json")
 
-    system = environment.get_template("system.j2").render(**context)
-    user = environment.get_template("user.j2").render(**context)
-    return system.strip(), user.strip()
+    system = environment.get_template("system.j2").render(**context).strip()
+    user = environment.get_template("user.j2").render(**context).strip()
+
+    # Solo el hash: la descripción puede contener datos del cliente.
+    prompt_hash = hashlib.sha256(f"{system}\n{user}".encode()).hexdigest()[:16]
+    logger.info(
+        "prompt_rendered",
+        prompt_name="estimation",
+        prompt_version=version,
+        prompt_hash=prompt_hash,
+        system_chars=len(system),
+        user_chars=len(user),
+    )
+    return system, user

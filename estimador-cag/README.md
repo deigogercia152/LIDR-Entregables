@@ -74,10 +74,14 @@ Recibe un `EstimationRequest` (definido en [`app/schemas.py`](app/schemas.py)):
 
 | Campo           | Valores                                                        |
 | --------------- | -------------------------------------------------------------- |
-| `description`   | Texto de 20 a 2000 caracteres                                  |
+| `description`   | Texto de 20 a 2000 caracteres (sin contar espacios de los extremos) |
 | `project_type`  | `mobile_app`, `web_saas`, `internal_tool`, `data_pipeline`     |
 | `detail_level`  | `summary`, `medium`, `detailed`                                |
 | `output_format` | `phases_table`, `line_items`, `narrative`                      |
+| `reference_projects` | Opcional. Hasta 5 proyectos `{name, summary, actual_hours}` ya entregados |
+
+El query param opcional `prompt_version` elige la versión del prompt (`v1` por
+defecto, o `v2`): `POST /api/v1/estimate?prompt_version=v2`.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/estimate \
@@ -99,8 +103,9 @@ Devuelve un `EstimationResponse` con el texto generado y la versión del prompt:
 }
 ```
 
-Respuestas de error: `422` si el body no cumple el schema y `503` si el
-proveedor no está configurado (por ejemplo, falta la API key).
+Respuestas de error: `422` si el body no cumple el schema o la versión de prompt
+no existe, y `503` si el proveedor no está configurado (por ejemplo, falta la
+API key).
 
 ## Prompts versionados
 
@@ -112,10 +117,11 @@ versión:
 app/prompts/
 ├── loader.py
 └── estimation/
-    └── v1/
-        ├── system.j2     # rol, instrucciones, bloques según output_format y detail_level
-        ├── user.j2       # envuelve la descripción en <project_description>
-        └── examples.j2   # ejemplos few-shot, incluido desde system.j2
+    ├── v1/
+    │   ├── system.j2     # rol, instrucciones, bloques según output_format y detail_level
+    │   ├── user.j2       # descripción en <project_description> y proyectos de referencia
+    │   └── examples.j2   # ejemplos few-shot, incluido desde system.j2
+    └── v2/               # mismo contrato, tono para un cliente no técnico y otros ejemplos
 ```
 
 `render_estimation_prompt(request, version="v1")` en
@@ -130,6 +136,21 @@ editar `v1/`: así cada respuesta puede atribuirse a la versión exacta que la
 generó (`prompt_version`). Los costes de los ejemplos usan una tarifa ficticia
 de USD 50 por hora; no representan precios comerciales.
 
+Si la petición trae `reference_projects`, `user.j2` los recorre con un
+`{% for %}` dentro de un bloque `<reference_projects>` para que el modelo
+calibre la estimación con horas reales. En el formulario se rellenan en la
+tabla "Proyectos de referencia (opcional)".
+
+Cada render emite un evento `prompt_rendered` con structlog que incluye la
+versión y un hash del prompt renderizado (nunca la descripción, que puede
+contener datos del cliente):
+
+```
+[info] prompt_rendered prompt_hash=5b007ed3c39065b3 prompt_name=estimation prompt_version=v1 ...
+```
+
+Dos peticiones con el mismo hash recibieron exactamente el mismo prompt.
+
 ## Pruebas
 
 Ejecuta las pruebas localmente, sin llamar a OpenAI ni a Anthropic:
@@ -141,6 +162,8 @@ uv run pytest
 - `tests/prompts/test_estimation_v1.py`: tests del template (milisegundos, sin
   red). Comprueban el bloque `<project_description>`, las instrucciones de cada
   `output_format` y `detail_level`, y que una versión desconocida se rechaza.
+- `tests/prompts/test_estimation_versions.py`: que `v1` y `v2` cumplen el mismo
+  contrato, los proyectos de referencia y el evento de log.
 - `tests/test_api.py`: contrato del endpoint con un proveedor falso.
 - `tests/test_streamlit_app.py`: el formulario con `AppTest` y el HTTP simulado.
 - `tests/test_streaming.py`: streaming de los proveedores con el SDK simulado.

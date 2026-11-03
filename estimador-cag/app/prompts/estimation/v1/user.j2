@@ -3,5 +3,16 @@ Tipo de proyecto: {{ project_type }}
 <project_description>
 {{ description }}
 </project_description>
+{% if reference_projects %}
+
+<reference_projects>
+{% for project in reference_projects %}
+- {{ project.name }}: {{ project.summary }} ({{ project.actual_hours }} h reales)
+{% endfor %}
+</reference_projects>
+
+Estos son proyectos similares ya entregados, con sus horas reales. Úsalos para
+calibrar tu estimación y menciona en qué se parece o se diferencia este proyecto.
+{% endif %}
 
 Genera la estimación de este proyecto siguiendo las instrucciones de formato y nivel de detalle.
