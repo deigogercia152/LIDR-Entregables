@@ -1,40 +1,19 @@
-from typing import Literal
+from fastapi import APIRouter, HTTPException
 
-from fastapi import APIRouter
-from pydantic import BaseModel, Field, field_validator
-
-from app.config import settings
-from app.services.llm_services import process_estimation_request
+from app.prompts.loader import DEFAULT_PROMPT_VERSION, render_estimation_prompt
+from app.schemas import EstimationRequest, EstimationResponse
+from app.services.llm_services import get_llm_provider
 
 router = APIRouter()
 
 
-class EstimationRequest(BaseModel):
-    transcription: str = Field(
-        min_length=1,
-        description="Transcripción de la reunión con el cliente.",
-    )
-
-    @field_validator("transcription")
-    @classmethod
-    def transcription_must_not_be_blank(cls, value: str) -> str:
-        transcription = value.strip()
-        if not transcription:
-            raise ValueError("La transcripción no puede estar vacía.")
-        return transcription
-
-
-class EstimationResponse(BaseModel):
-    estimation: str
-    model: str
-    provider: Literal["openai", "anthropic"]
-
-
 @router.post("/estimate", response_model=EstimationResponse)
 def estimate(request: EstimationRequest) -> EstimationResponse:
-    estimation = process_estimation_request(request.transcription)
-    return EstimationResponse(
-        estimation=estimation,
-        model=settings.llm_model,
-        provider=settings.llm_provider,
-    )
+    system, user = render_estimation_prompt(request, version=DEFAULT_PROMPT_VERSION)
+    try:
+        provider = get_llm_provider()
+    except ValueError as error:
+        # Configuración incompleta (p. ej. falta la API key): no es culpa del cliente.
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    text = provider.process_message(system, user)
+    return EstimationResponse(text=text, prompt_version=DEFAULT_PROMPT_VERSION)

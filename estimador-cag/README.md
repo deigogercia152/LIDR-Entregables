@@ -1,8 +1,9 @@
 # Estimador CAG
 
-API REST para generar estimaciones de esfuerzo y recursos para proyectos de
-software a partir de transcripciones de reuniones con clientes. La estimación
-incluye tareas y horas, total estimado, equipo recomendado y duración.
+Servicio IA (FastAPI) y cliente web (Streamlit) para generar estimaciones de
+esfuerzo y recursos de proyectos de software. El usuario rellena un formulario
+tipado (descripción, tipo de proyecto, nivel de detalle y formato de salida) y
+el servicio construye el prompt a partir de templates Jinja2 versionados.
 
 ## Requisitos
 
@@ -10,7 +11,7 @@ incluye tareas y horas, total estimado, equipo recomendado y duración.
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/).
 - Una clave de API de OpenAI o Anthropic.
 
-## Instalación y ejecución
+## Instalación y configuración
 
 Desde este directorio (`estimador-cag`), instala las dependencias del proyecto
 y las herramientas de prueba con `uv`:
@@ -29,17 +30,33 @@ OPENAI_API_KEY=tu-clave-de-openai
 ```
 
 Para usar Anthropic, configura `LLM_PROVIDER=anthropic`, indica un modelo de
-Anthropic en `LLM_MODEL` y proporciona `ANTHROPIC_API_KEY`. Solo se necesita la
-clave del proveedor seleccionado.
+Anthropic en `LLM_MODEL` (por ejemplo `claude-haiku-4-5-20251001`) y
+proporciona `ANTHROPIC_API_KEY`. Solo se necesita la clave del proveedor
+seleccionado, y solo la usa el servicio: el cliente no la ve nunca.
 
-Inicia el servidor desde `estimador-cag`:
+## Cómo se levanta
+
+Son dos procesos. En una terminal, el servicio IA:
 
 ```bash
 uv run uvicorn app.main:app --reload
 ```
 
-La API estará disponible en `http://127.0.0.1:8000`. La documentación
-interactiva de OpenAPI está en `http://127.0.0.1:8000/docs`.
+La API queda en `http://127.0.0.1:8000` y su documentación OpenAPI en
+`http://127.0.0.1:8000/docs`.
+
+En otra terminal, el cliente Streamlit:
+
+```bash
+uv run streamlit run streamlit_app.py
+```
+
+Se abre en `http://localhost:8501`. Si el servicio está en otra dirección,
+indícala con `ESTIMATOR_API_URL`:
+
+```bash
+ESTIMATOR_API_URL=http://mi-servidor:8000 uv run streamlit run streamlit_app.py
+```
 
 ## Endpoints
 
@@ -53,65 +70,80 @@ Comprueba que la API está en ejecución:
 
 ### `POST /api/v1/estimate`
 
-Envía una transcripción no vacía como JSON. Hay un ejemplo listo para probar en
-[`data/transcripcion_reunion.txt`](data/transcripcion_reunion.txt):
+Recibe un `EstimationRequest` (definido en [`app/schemas.py`](app/schemas.py)):
+
+| Campo           | Valores                                                        |
+| --------------- | -------------------------------------------------------------- |
+| `description`   | Texto de 20 a 2000 caracteres                                  |
+| `project_type`  | `mobile_app`, `web_saas`, `internal_tool`, `data_pipeline`     |
+| `detail_level`  | `summary`, `medium`, `detailed`                                |
+| `output_format` | `phases_table`, `line_items`, `narrative`                      |
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/estimate \
   -H "Content-Type: application/json" \
-  -d '{"transcription":"El cliente necesita una aplicación web para gestionar inventario y generar reportes."}'
+  -d '{
+        "description": "Landing page con formulario de contacto, integración con HubSpot y un blog con editor WYSIWYG.",
+        "project_type": "web_saas",
+        "detail_level": "medium",
+        "output_format": "phases_table"
+      }'
 ```
 
-La respuesta contiene la estimación generada, el modelo y el proveedor:
+Devuelve un `EstimationResponse` con el texto generado y la versión del prompt:
 
 ```json
 {
-  "estimation": "## Estimación ...",
-  "model": "gpt-4o-mini",
-  "provider": "openai"
+  "text": "| Fase | Horas | Coste (USD) | confidence_pct | ...",
+  "prompt_version": "v1"
 }
 ```
 
-## Interfaz web (Streamlit)
+Respuestas de error: `422` si el body no cumple el schema y `503` si el
+proveedor no está configurado (por ejemplo, falta la API key).
 
-Además de la API, el proyecto incluye una interfaz de chat en
-[`streamlit_app.py`](streamlit_app.py). Llama directamente a la capa de
-servicios, así que no hace falta tener uvicorn levantado. Desde
-`estimador-cag`:
+## Prompts versionados
 
-```bash
-uv run streamlit run streamlit_app.py
+Los prompts viven fuera del código, en
+[`app/prompts/estimation/`](app/prompts/estimation/), con una carpeta por
+versión:
+
+```
+app/prompts/
+├── loader.py
+└── estimation/
+    └── v1/
+        ├── system.j2     # rol, instrucciones, bloques según output_format y detail_level
+        ├── user.j2       # envuelve la descripción en <project_description>
+        └── examples.j2   # ejemplos few-shot, incluido desde system.j2
 ```
 
-Se abre en `http://localhost:8501`. Pega una transcripción (por ejemplo, la de
-[`data/transcripcion_reunion.txt`](data/transcripcion_reunion.txt)) y la
-estimación se irá mostrando en streaming. Cada mensaje se estima de forma
-independiente con el mismo system prompt y los mismos ejemplos que el endpoint;
-el historial se mantiene en pantalla durante la sesión.
+`render_estimation_prompt(request, version="v1")` en
+[`app/prompts/loader.py`](app/prompts/loader.py) devuelve `(system, user)`, que
+se envían al modelo como mensajes `system` y `user` separados. El entorno Jinja2
+usa `StrictUndefined`, así que una variable que falte en el contexto rompe el
+render en lugar de dejar un hueco silencioso. Cada versión tiene su propio
+loader, de modo que un `{% include %}` nunca mezcla ficheros de dos versiones.
 
-El panel lateral muestra el system prompt activo, las estimaciones de ejemplo
-inyectadas y las métricas de la última llamada (modelo, tokens de entrada y
-salida, tiempo de respuesta). El botón "Nueva conversación" vacía el historial.
-
-La configuración se lee de `.env`. Como alternativa, puedes copiar
-`.streamlit/secrets.toml.example` a `.streamlit/secrets.toml` (ignorado en git);
-sus valores tienen prioridad sobre `.env` salvo que la variable ya exista en el
-entorno.
-
-## Contexto de estimaciones
-
-La API inyecta tres ejemplos estáticos definidos en
-[`app/context/examples.py`](app/context/examples.py) en cada petición. Los
-costes de esos ejemplos son orientativos y se calculan con una tarifa ficticia
+Para cambiar un prompt ya publicado, crea una carpeta nueva (`v2/`) en lugar de
+editar `v1/`: así cada respuesta puede atribuirse a la versión exacta que la
+generó (`prompt_version`). Los costes de los ejemplos usan una tarifa ficticia
 de USD 50 por hora; no representan precios comerciales.
 
-## Pruebas y validación automática
+## Pruebas
 
-Ejecuta las pruebas localmente sin llamar a OpenAI ni Anthropic:
+Ejecuta las pruebas localmente, sin llamar a OpenAI ni a Anthropic:
 
 ```bash
 uv run pytest
 ```
+
+- `tests/prompts/test_estimation_v1.py`: tests del template (milisegundos, sin
+  red). Comprueban el bloque `<project_description>`, las instrucciones de cada
+  `output_format` y `detail_level`, y que una versión desconocida se rechaza.
+- `tests/test_api.py`: contrato del endpoint con un proveedor falso.
+- `tests/test_streamlit_app.py`: el formulario con `AppTest` y el HTTP simulado.
+- `tests/test_streaming.py`: streaming de los proveedores con el SDK simulado.
 
 GitHub Actions ejecuta estas pruebas automáticamente en cada push y pull
 request.

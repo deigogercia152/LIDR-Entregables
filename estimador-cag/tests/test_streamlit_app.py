@@ -1,57 +1,102 @@
 from pathlib import Path
 
+import httpx
+import pytest
 from streamlit.testing.v1 import AppTest
 
-from app.services import llm_services
-from app.services.providers.i_llm_provider import ILLMProvider, LLMUsage
+from app.schemas import DetailLevel, OutputFormat, ProjectType
 
 APP_PATH = str(Path(__file__).resolve().parents[1] / "streamlit_app.py")
+DESCRIPTION = "Una tienda online de cerámica artesanal con pasarela de pago y blog."
 
 
-class FakeProvider(ILLMProvider):
-    def process_message(self, system_message: str, user_message: str) -> str:
-        raise AssertionError("no debería llamarse")
-
-    def stream_message(self, system_message: str, user_message: str):
-        yield "## Estimación"
-        yield " de prueba"
-        self.last_usage = LLMUsage(model="fake-model", input_tokens=100, output_tokens=7)
+def _request() -> httpx.Request:
+    return httpx.Request("POST", "http://test/api/v1/estimate")
 
 
-def test_chat_streams_estimation_keeps_history_and_shows_metrics(monkeypatch) -> None:
-    monkeypatch.setattr(llm_services, "get_llm_provider", FakeProvider)
+@pytest.fixture
+def captured_posts(monkeypatch) -> list[dict]:
+    calls: list[dict] = []
 
+    def fake_post(url: str, json: dict, timeout: float) -> httpx.Response:
+        calls.append({"url": url, "json": json})
+        return httpx.Response(
+            200,
+            json={"text": "## Estimación de prueba", "prompt_version": "v1"},
+            request=_request(),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    return calls
+
+
+def _fill_form(app: AppTest, description: str = DESCRIPTION) -> AppTest:
+    app.text_area(key="description").set_value(description)
+    app.selectbox(key="project_type").set_value(ProjectType.WEB_SAAS)
+    app.radio(key="detail_level").set_value(DetailLevel.DETAILED)
+    app.selectbox(key="output_format").set_value(OutputFormat.PHASES_TABLE)
+    return app
+
+
+def _run_app() -> AppTest:
     app = AppTest.from_file(APP_PATH, default_timeout=30).run()
     assert not app.exception
-    assert app.session_state.messages == []
-
-    app.chat_input[0].set_value("Reunión 1: app de inventario").run()
-    app.chat_input[0].set_value("Reunión 2: web corporativa").run()
-
-    assert not app.exception
-    assert [m["role"] for m in app.session_state.messages] == [
-        "user",
-        "assistant",
-        "user",
-        "assistant",
-    ]
-    assert app.session_state.messages[1]["content"] == "## Estimación de prueba"
-    assert app.session_state.last_metrics["model"] == "fake-model"
-    assert app.session_state.last_metrics["input_tokens"] == 100
-    assert app.session_state.last_metrics["output_tokens"] == 7
-    assert len(app.chat_message) == 4
-    assert app.sidebar.text_area[0].value == llm_services.build_system_message()
+    return app
 
 
-def test_chat_shows_error_without_adding_assistant_message(monkeypatch) -> None:
-    def failing_provider():
-        raise ValueError("OPENAI_API_KEY no está configurada.")
+def test_form_posts_typed_request_and_shows_estimation(captured_posts: list[dict]) -> None:
+    app = _run_app()
+    assert not app.chat_input
 
-    monkeypatch.setattr(llm_services, "get_llm_provider", failing_provider)
-
-    app = AppTest.from_file(APP_PATH, default_timeout=30).run()
-    app.chat_input[0].set_value("Reunión").run()
+    _fill_form(app).button[0].click().run()
 
     assert not app.exception
-    assert "OPENAI_API_KEY no está configurada." in app.error[0].value
-    assert [m["role"] for m in app.session_state.messages] == ["user"]
+    assert len(captured_posts) == 1
+    assert captured_posts[0]["url"].endswith("/api/v1/estimate")
+    assert captured_posts[0]["json"] == {
+        "description": DESCRIPTION,
+        "project_type": "web_saas",
+        "detail_level": "detailed",
+        "output_format": "phases_table",
+    }
+    assert any("## Estimación de prueba" in md.value for md in app.markdown)
+    assert app.session_state.last_result["prompt_version"] == "v1"
+
+
+def test_form_rejects_short_description_without_calling_service(
+    captured_posts: list[dict],
+) -> None:
+    app = _run_app()
+
+    _fill_form(app, description="Muy corta").button[0].click().run()
+
+    assert not app.exception
+    assert captured_posts == []
+    assert "20" in app.error[0].value
+
+
+def test_form_shows_service_error(monkeypatch) -> None:
+    def failing_post(url: str, json: dict, timeout: float) -> httpx.Response:
+        return httpx.Response(500, text="Internal Server Error", request=_request())
+
+    monkeypatch.setattr(httpx, "post", failing_post)
+    app = _run_app()
+
+    _fill_form(app).button[0].click().run()
+
+    assert not app.exception
+    assert "500" in app.error[0].value
+    assert app.session_state.last_result is None
+
+
+def test_form_shows_connection_error(monkeypatch) -> None:
+    def unreachable_post(url: str, json: dict, timeout: float) -> httpx.Response:
+        raise httpx.ConnectError("Connection refused", request=_request())
+
+    monkeypatch.setattr(httpx, "post", unreachable_post)
+    app = _run_app()
+
+    _fill_form(app).button[0].click().run()
+
+    assert not app.exception
+    assert "No se pudo conectar" in app.error[0].value

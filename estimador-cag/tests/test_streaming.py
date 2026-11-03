@@ -1,8 +1,7 @@
 from types import SimpleNamespace
 
-from app.services import llm_services
 from app.services.providers.antropic_llm_provider import AnthropicLLMProvider
-from app.services.providers.i_llm_provider import ILLMProvider, LLMUsage
+from app.services.providers.i_llm_provider import LLMUsage
 from app.services.providers.openai_llm_provider import OpenAILLMProvider
 
 
@@ -68,25 +67,3 @@ def test_anthropic_stream_yields_text_and_records_usage() -> None:
     assert captured["system"] == "system"
     assert captured["messages"] == [{"role": "user", "content": "user"}]
     assert provider.last_usage == LLMUsage(model="claude-test", input_tokens=20, output_tokens=5)
-
-
-def test_stream_estimation_uses_same_cag_messages_as_endpoint(monkeypatch) -> None:
-    class FakeProvider(ILLMProvider):
-        def process_message(self, system_message: str, user_message: str) -> str:
-            raise AssertionError("no debería llamarse")
-
-        def stream_message(self, system_message: str, user_message: str):
-            self.received = (system_message, user_message)
-            yield "ok"
-
-    fake = FakeProvider()
-    monkeypatch.setattr(llm_services, "get_llm_provider", lambda: fake)
-
-    provider, stream = llm_services.stream_estimation("Reunión de prueba")
-
-    assert provider is fake
-    assert list(stream) == ["ok"]
-    assert fake.received == (
-        llm_services.build_system_message(),
-        llm_services.build_user_message("Reunión de prueba"),
-    )

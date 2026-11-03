@@ -1,111 +1,137 @@
 import os
 import time
 
+import httpx
 import streamlit as st
+from pydantic import ValidationError
 
-SECRET_KEYS = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "LLM_PROVIDER", "LLM_MODEL")
+from app.schemas import (
+    DetailLevel,
+    EstimationRequest,
+    EstimationResponse,
+    OutputFormat,
+    ProjectType,
+)
+
+API_URL = os.getenv("ESTIMATOR_API_URL", "http://127.0.0.1:8000").rstrip("/")
+ESTIMATE_ENDPOINT = f"{API_URL}/api/v1/estimate"
+REQUEST_TIMEOUT_SECONDS = 120.0
+
+PROJECT_TYPE_LABELS = {
+    ProjectType.MOBILE_APP: "App móvil",
+    ProjectType.WEB_SAAS: "Web / SaaS",
+    ProjectType.INTERNAL_TOOL: "Herramienta interna",
+    ProjectType.DATA_PIPELINE: "Pipeline de datos",
+}
+DETAIL_LEVEL_LABELS = {
+    DetailLevel.SUMMARY: "Resumen",
+    DetailLevel.MEDIUM: "Medio",
+    DetailLevel.DETAILED: "Detallado",
+}
+OUTPUT_FORMAT_LABELS = {
+    OutputFormat.PHASES_TABLE: "Tabla por fases",
+    OutputFormat.LINE_ITEMS: "Lista de partidas",
+    OutputFormat.NARRATIVE: "Narrativa",
+}
 
 
-def load_streamlit_secrets() -> None:
-    """Copia los secretos de st.secrets a variables de entorno, si existen.
-
-    Debe ejecutarse antes de importar `app.config`: pydantic-settings da prioridad
-    a las variables de entorno sobre `.env`, y `setdefault` respeta las ya definidas.
-    """
-    try:
-        for key in SECRET_KEYS:
-            if key in st.secrets:
-                os.environ.setdefault(key, str(st.secrets[key]))
-    except Exception:
-        # Sin secrets.toml: la configuración se lee de `.env`.
-        pass
-
-
-load_streamlit_secrets()
-
-from app.config import settings  # noqa: E402
-from app.context.examples import get_estimation_examples  # noqa: E402
-from app.services.llm_services import build_system_message, stream_estimation  # noqa: E402
-
-
-def render_sidebar() -> None:
-    with st.sidebar:
-        st.header("Contexto CAG")
-
-        st.subheader("System prompt activo")
-        st.text_area(
-            "System prompt",
-            value=build_system_message(),
-            height=300,
-            disabled=True,
-            label_visibility="collapsed",
-        )
-
-        st.subheader("Estimaciones de ejemplo")
-        for index, example in enumerate(get_estimation_examples(), start=1):
-            with st.expander(f"Ejemplo {index}"):
-                st.markdown(f"**Resumen de la reunión:** {example['meeting_summary'].strip()}")
-                st.code(example["estimation"].strip(), language="markdown")
-
-        st.subheader("Última llamada")
-        metrics = st.session_state.last_metrics
-        if metrics is None:
-            st.caption("Aún no se ha generado ninguna estimación.")
+def validation_messages(error: ValidationError) -> list[str]:
+    messages = []
+    for item in error.errors():
+        if item["loc"] == ("description",):
+            messages.append("La descripción debe tener entre 20 y 2000 caracteres.")
         else:
-            st.metric("Modelo", metrics["model"])
-            col_in, col_out = st.columns(2)
-            col_in.metric("Tokens entrada", metrics["input_tokens"])
-            col_out.metric("Tokens salida", metrics["output_tokens"])
-            st.metric("Tiempo de respuesta", f"{metrics['elapsed']:.2f} s")
+            messages.append(f"{'.'.join(map(str, item['loc']))}: {item['msg']}")
+    return messages
 
-        if st.button("Nueva conversación", width="stretch"):
-            st.session_state.messages = []
-            st.session_state.last_metrics = None
-            st.rerun()
+
+def request_estimation(request: EstimationRequest) -> EstimationResponse:
+    """Envía la petición tipada al servicio IA y valida su respuesta."""
+    response = httpx.post(
+        ESTIMATE_ENDPOINT,
+        json=request.model_dump(mode="json"),
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    return EstimationResponse.model_validate(response.json())
 
 
 st.set_page_config(page_title="Estimador CAG", page_icon="📐")
 st.title("📐 Estimador CAG")
-st.caption(
-    f"Pega la transcripción de una reunión y obtén una estimación del proyecto · "
-    f"{settings.llm_provider} / {settings.llm_model}"
-)
+st.caption("Describe el proyecto, elige los parámetros y obtén una estimación.")
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "last_metrics" not in st.session_state:
-    st.session_state.last_metrics = None
+if "last_result" not in st.session_state:
+    st.session_state.last_result = None
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+with st.form("estimation_form"):
+    description = st.text_area(
+        "Descripción del proyecto",
+        key="description",
+        height=200,
+        max_chars=2000,
+        placeholder="Qué necesita el cliente, usuarios, integraciones, plazos…",
+    )
+    project_type = st.selectbox(
+        "Tipo de proyecto",
+        options=list(ProjectType),
+        format_func=PROJECT_TYPE_LABELS.__getitem__,
+        key="project_type",
+    )
+    detail_level = st.radio(
+        "Nivel de detalle",
+        options=list(DetailLevel),
+        index=1,
+        format_func=DETAIL_LEVEL_LABELS.__getitem__,
+        horizontal=True,
+        key="detail_level",
+    )
+    output_format = st.selectbox(
+        "Formato de salida",
+        options=list(OutputFormat),
+        format_func=OUTPUT_FORMAT_LABELS.__getitem__,
+        key="output_format",
+    )
+    submitted = st.form_submit_button("Estimar", type="primary")
 
-if prompt := st.chat_input("Pega aquí la transcripción de la reunión…"):
-    transcription = prompt.strip()
-    if not transcription:
-        st.warning("La transcripción no puede estar vacía.")
+if submitted:
+    try:
+        estimation_request = EstimationRequest(
+            description=description,
+            project_type=project_type,
+            detail_level=detail_level,
+            output_format=output_format,
+        )
+    except ValidationError as error:
+        for message in validation_messages(error):
+            st.error(message)
     else:
-        st.session_state.messages.append({"role": "user", "content": transcription})
-        with st.chat_message("user"):
-            st.markdown(transcription)
-
-        with st.chat_message("assistant"):
-            try:
+        try:
+            with st.spinner("Generando estimación…"):
                 start = time.perf_counter()
-                provider, stream = stream_estimation(transcription)
-                estimation = st.write_stream(stream)
+                estimation = request_estimation(estimation_request)
                 elapsed = time.perf_counter() - start
-            except Exception as error:
-                st.error(f"No se pudo generar la estimación: {error}")
-            else:
-                st.session_state.messages.append({"role": "assistant", "content": estimation})
-                usage = provider.last_usage
-                st.session_state.last_metrics = {
-                    "model": usage.model if usage else settings.llm_model,
-                    "input_tokens": usage.input_tokens if usage else "—",
-                    "output_tokens": usage.output_tokens if usage else "—",
-                    "elapsed": elapsed,
-                }
+        except httpx.HTTPStatusError as error:
+            st.error(
+                f"El servicio respondió {error.response.status_code}: {error.response.text}"
+            )
+        except httpx.RequestError as error:
+            st.error(f"No se pudo conectar con el servicio en {API_URL}: {error}")
+        except ValidationError:
+            st.error("El servicio devolvió una respuesta con un formato inesperado.")
+        else:
+            st.session_state.last_result = {
+                "text": estimation.text,
+                "prompt_version": estimation.prompt_version,
+                "elapsed": elapsed,
+            }
 
-# El sidebar se pinta al final para que las métricas reflejen la llamada recién hecha.
-render_sidebar()
+result = st.session_state.last_result
+if result is not None:
+    st.divider()
+    st.markdown(result["text"])
+    st.caption(f"Prompt {result['prompt_version']} · {result['elapsed']:.1f} s")
+
+with st.sidebar:
+    st.header("Servicio IA")
+    st.code(ESTIMATE_ENDPOINT, language=None)
+    st.caption("Configurable con la variable de entorno `ESTIMATOR_API_URL`.")
