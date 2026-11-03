@@ -5,6 +5,15 @@ esfuerzo y recursos de proyectos de software. El usuario rellena un formulario
 tipado (descripción, tipo de proyecto, nivel de detalle y formato de salida) y
 el servicio construye el prompt a partir de templates Jinja2 versionados.
 
+![Formulario relleno y estimación generada](screenshot.png)
+
+<details>
+<summary>Demo animada</summary>
+
+![El formulario se rellena y el servicio devuelve la estimación](demo.gif)
+
+</details>
+
 ## Requisitos
 
 - Python 3.11 o superior.
