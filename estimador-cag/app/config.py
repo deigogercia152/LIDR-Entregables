@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     llm_provider: Literal["openai", "anthropic"] = "openai"
     llm_model: str = Field(default="gpt-4o-mini", min_length=1)
+    session_max_turns: int = Field(default=6, ge=1)
+    max_sessions: int = Field(default=500, ge=1)
     app_env: str = "development"
     log_level: str = "INFO"
 
