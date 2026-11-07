@@ -1,0 +1,12 @@
+Tipo de proyecto: {{ project_type }}
+
+<transcript>
+{{ transcript }}
+</transcript>
+{% for attachment in attachments %}
+
+--- attachment: {{ attachment.filename }} ---
+{{ attachment.text }}
+{% endfor %}
+
+Actualiza la estimación del proyecto con este mensaje, siguiendo las instrucciones de formato y nivel de detalle.

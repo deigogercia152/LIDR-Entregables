@@ -75,7 +75,7 @@ def test_unknown_version_is_rejected(version: str) -> None:
 
 
 def test_missing_template_variable_fails_loudly() -> None:
-    template = loader._get_environment("v1").from_string("{{ not_provided }}")
+    template = loader._get_environment("estimation", "v1").from_string("{{ not_provided }}")
 
     with pytest.raises(UndefinedError):
         template.render()

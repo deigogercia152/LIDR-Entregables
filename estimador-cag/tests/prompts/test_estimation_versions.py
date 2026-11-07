@@ -42,7 +42,7 @@ def test_v2_is_a_deliberate_variation_of_v1() -> None:
     assert "cliente no técnico" not in v1_system
 
 
-@pytest.mark.parametrize("version", ["v1", "v2"])
+@pytest.mark.parametrize("version", available_versions())
 def test_every_version_keeps_the_template_contract(version: str) -> None:
     _, user = render_estimation_prompt(make_request(), version=version)
     table_system, _ = render_estimation_prompt(
@@ -65,7 +65,7 @@ def test_every_version_keeps_the_template_contract(version: str) -> None:
     assert "asunciones por fase" not in summary_system
 
 
-@pytest.mark.parametrize("version", ["v1", "v2"])
+@pytest.mark.parametrize("version", available_versions())
 def test_reference_projects_are_listed_when_present(version: str) -> None:
     other = ReferenceProject(name="App de fichajes", summary="App móvil con GPS", actual_hours=260)
     _, user = render_estimation_prompt(

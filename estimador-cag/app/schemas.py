@@ -2,6 +2,10 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.sessions import ProjectMetadata
+
+MAX_TRANSCRIPT_CHARS = 20_000
+
 
 class ProjectType(str, Enum):
     MOBILE_APP = "mobile_app"
@@ -47,3 +51,32 @@ class EstimationRequest(BaseModel):
 class EstimationResponse(BaseModel):
     text: str
     prompt_version: str
+
+
+class Attachment(BaseModel):
+    """Texto ya extraído de un documento adjunto."""
+
+    filename: str
+    text: str
+
+
+class SessionEstimationRequest(BaseModel):
+    """Un turno de una sesión: transcripción nueva, parámetros tipados y adjuntos.
+
+    A diferencia de `EstimationRequest.description`, la transcripción no tiene un
+    mínimo de 20 caracteres: un turno de seguimiento puede ser "¿y con app móvil?".
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    transcript: str = Field(min_length=1, max_length=MAX_TRANSCRIPT_CHARS)
+    project_type: ProjectType
+    detail_level: DetailLevel
+    output_format: OutputFormat
+    attachments: list[Attachment] = Field(default_factory=list)
+
+
+class SessionEstimationResponse(EstimationResponse):
+    session_id: str
+    turn: int
+    project_metadata: ProjectMetadata
