@@ -16,14 +16,11 @@ class OpenAILLMProvider(ILLMProvider):
 		self.model = model
 		self.max_tokens = max_tokens
 
-	def process_message(self, system_message: str, user_message: str) -> str:
+	def process_chat(self, system_message: str, messages: list[dict[str, str]]) -> str:
 		response = self.client.chat.completions.create(
 			model=self.model,
 			max_tokens=self.max_tokens,
-			messages=[
-				{"role": "system", "content": system_message},
-				{"role": "user", "content": user_message},
-			],
+			messages=[{"role": "system", "content": system_message}, *messages],
 		)
 		if not response.choices or response.choices[0].message.content is None:
 			raise RuntimeError("OpenAI devolvió una respuesta sin contenido de texto.")

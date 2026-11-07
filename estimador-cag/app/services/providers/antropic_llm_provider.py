@@ -16,12 +16,12 @@ class AnthropicLLMProvider(ILLMProvider):
 		self.model = model
 		self.max_tokens = max_tokens
 
-	def process_message(self, system_message: str, user_message: str) -> str:
+	def process_chat(self, system_message: str, messages: list[dict[str, str]]) -> str:
 		response = self.client.messages.create(
 			model=self.model,
 			max_tokens=self.max_tokens,
 			system=system_message,
-			messages=[{"role": "user", "content": user_message}],
+			messages=messages,
 		)
 		text = "".join(
 			block.text for block in response.content if getattr(block, "type", None) == "text"

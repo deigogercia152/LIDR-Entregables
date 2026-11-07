@@ -23,8 +23,9 @@ class FakeProvider(ILLMProvider):
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
 
-    def process_message(self, system_message: str, user_message: str) -> str:
-        self.calls.append((system_message, user_message))
+    def process_chat(self, system_message: str, messages: list[dict[str, str]]) -> str:
+        assert [m["role"] for m in messages] == ["user"]
+        self.calls.append((system_message, messages[0]["content"]))
         return "Estimación de prueba"
 
     def stream_message(self, system_message: str, user_message: str):

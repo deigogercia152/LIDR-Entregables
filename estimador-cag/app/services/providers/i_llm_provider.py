@@ -18,9 +18,17 @@ class ILLMProvider(ABC):
 	last_usage: LLMUsage | None = None
 
 	@abstractmethod
-	def process_message(self, system_message: str, user_message: str) -> str:
-		"""Envía las instrucciones del sistema y el mensaje del usuario al modelo."""
+	def process_chat(self, system_message: str, messages: list[dict[str, str]]) -> str:
+		"""Envía las instrucciones del sistema y una conversación al modelo.
+
+		`messages` es el array de turnos `{"role": "user" | "assistant", "content": ...}`
+		sin el mensaje de sistema, que viaja aparte porque Anthropic lo exige así.
+		"""
 		raise NotImplementedError
+
+	def process_message(self, system_message: str, user_message: str) -> str:
+		"""Envía las instrucciones del sistema y un único mensaje del usuario al modelo."""
+		return self.process_chat(system_message, [{"role": "user", "content": user_message}])
 
 	@abstractmethod
 	def stream_message(self, system_message: str, user_message: str) -> Iterator[str]:
