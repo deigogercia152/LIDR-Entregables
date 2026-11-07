@@ -268,8 +268,8 @@ de USD 50 por hora; no representan precios comerciales.
 
 Si la petición trae `reference_projects`, `user.j2` los recorre con un
 `{% for %}` dentro de un bloque `<reference_projects>` para que el modelo
-calibre la estimación con horas reales. En el formulario se rellenan en la
-tabla "Proyectos de referencia (opcional)".
+calibre la estimación con horas reales. Solo está disponible en `/estimate` (API),
+no en la interfaz de conversación.
 
 Cada render emite un evento `prompt_rendered` con structlog que incluye la
 versión y un hash del prompt renderizado (nunca la descripción, que puede
