@@ -98,6 +98,14 @@ def test_metadata_cannot_close_the_prompt_tag_and_is_bounded() -> None:
     assert len(metadata.agreed_scope) == 1000
 
 
+def test_metadata_tolerates_null_text_fields_from_the_extractor() -> None:
+    metadata = ProjectMetadata.model_validate_json(
+        '{"project_name": null, "agreed_scope": null, "mentioned_technologies": null}'
+    )
+
+    assert metadata.is_empty()
+
+
 def test_store_creates_distinct_sessions_and_returns_none_for_unknown_ids() -> None:
     store = SessionStore(max_sessions=10)
 

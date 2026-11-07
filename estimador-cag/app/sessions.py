@@ -45,18 +45,18 @@ class ProjectMetadata(BaseModel):
     @field_validator("project_name", mode="before")
     @classmethod
     def _clean_name(cls, value: object) -> object:
-        return _clean(value, MAX_NAME_CHARS) if isinstance(value, str) else value
+        return _clean(value, MAX_NAME_CHARS) if isinstance(value, str) else (value or "")
 
     @field_validator("agreed_scope", mode="before")
     @classmethod
     def _clean_scope(cls, value: object) -> object:
-        return _clean(value, MAX_SCOPE_CHARS) if isinstance(value, str) else value
+        return _clean(value, MAX_SCOPE_CHARS) if isinstance(value, str) else (value or "")
 
     @field_validator("mentioned_technologies", mode="before")
     @classmethod
     def _clean_technologies(cls, value: object) -> object:
         if not isinstance(value, list):
-            return value
+            return value or []  # los LLM a veces devuelven null en lugar de una lista vacía
         cleaned = (_clean(tech, MAX_TECHNOLOGY_CHARS) for tech in value if isinstance(tech, str))
         return [tech for tech in cleaned if tech][:MAX_TECHNOLOGIES]
 
