@@ -10,6 +10,19 @@ esfuerzo y recursos de proyectos de software. Hay dos formas de usarlo:
 
 Los prompts son templates Jinja2 versionados, fuera del código.
 
+![Conversación de tres turnos con el panel de memoria del proyecto](screenshot.png)
+
+<details>
+<summary>Demo animada: tres turnos reales, con un PDF adjunto en el segundo</summary>
+
+![Conversación con un PDF adjunto; el panel de memoria se va actualizando](demo.gif)
+
+Grabada con `SESSION_MAX_TURNS=1`: en el turno 3 el turno 1 ya ha salido del
+historial y el modelo aun así recuerda el nombre del proyecto y el stack, porque
+los recupera de `project_metadata`.
+
+</details>
+
 ## Requisitos
 
 - Python 3.11 o superior.
