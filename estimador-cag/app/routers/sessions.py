@@ -76,6 +76,6 @@ def estimate_in_session(
             text=text,
             prompt_version=SESSION_PROMPT_VERSION,
             session_id=session.id,
-            turn=len(session.history),
+            turn=session.turn_count,
             project_metadata=session.metadata,
         )

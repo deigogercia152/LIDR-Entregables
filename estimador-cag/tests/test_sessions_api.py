@@ -238,9 +238,14 @@ async def test_history_sent_to_the_llm_never_exceeds_the_sliding_window(
     monkeypatch.setattr(settings, "session_max_turns", 3)
     session_id = await new_session(client)
 
+    reported_turns = []
     for turn in range(1, 9):
-        assert (await estimate(client, session_id, f"pregunta {turn}")).status_code == 200
+        response = await estimate(client, session_id, f"pregunta {turn}")
+        assert response.status_code == 200
+        reported_turns.append(response.json()["turn"])
 
+    # `turn` cuenta los turnos de la sesión, no los que caben en la ventana.
+    assert reported_turns == list(range(1, 9))
     assert len(provider.estimation_calls) == 8
     for turn, (system, messages) in enumerate(provider.estimation_calls, start=1):
         previous_pairs = min(turn - 1, 3)

@@ -18,6 +18,8 @@ from collections import OrderedDict, deque
 
 from pydantic import BaseModel, Field, field_validator
 
+MAX_TURNS = 6  # turnos completos que se conservan en el historial (SESSION_MAX_TURNS)
+MAX_SESSIONS = 500  # sesiones simultáneas antes de expulsar la menos usada (MAX_SESSIONS)
 MAX_TECHNOLOGIES = 30
 MAX_TECHNOLOGY_CHARS = 50
 MAX_NAME_CHARS = 100
@@ -128,6 +130,8 @@ class Session:
     def __init__(self, session_id: str, max_turns: int) -> None:
         self.id = session_id
         self.history = ConversationHistory(max_turns)
+        # Turnos totales de la sesión. No sale de `len(history)`, que se queda en `max_turns`.
+        self.turn_count = 0
         self.metadata = ProjectMetadata()
         # Serializa los turnos de una misma sesión: dos peticiones simultáneas
         # leerían el mismo historial y una pisaría el turno de la otra.

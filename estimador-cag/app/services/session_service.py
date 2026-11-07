@@ -17,6 +17,7 @@ def run_turn(session: Session, request: SessionEstimationRequest, provider: ILLM
     system, user = render_session_prompt(request, session.metadata)
     estimation = provider.process_chat(system, session.history.chat_messages(user))
     session.history.add_turn(user, estimation)
+    session.turn_count += 1
     session.metadata = _updated_metadata(session.metadata, user, estimation, provider)
     return estimation
 
