@@ -24,6 +24,13 @@ class OpenAILLMProvider(ILLMProvider):
 		)
 		if not response.choices or response.choices[0].message.content is None:
 			raise RuntimeError("OpenAI devolvió una respuesta sin contenido de texto.")
+		usage = getattr(response, "usage", None)
+		if usage:
+			self.last_usage = LLMUsage(
+				model=self.model,
+				input_tokens=usage.prompt_tokens,
+				output_tokens=usage.completion_tokens,
+			)
 		return response.choices[0].message.content
 
 	def stream_message(self, system_message: str, user_message: str) -> Iterator[str]:

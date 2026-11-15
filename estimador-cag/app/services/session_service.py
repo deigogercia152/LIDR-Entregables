@@ -1,7 +1,8 @@
 import structlog
 
 from app.prompts.loader import render_metadata_extraction_prompt, render_session_prompt
-from app.schemas import SessionEstimationRequest
+from app.schemas import SessionEstimationRequest, TurnObservation
+from app.services.llm_wrapper import ObservedProvider
 from app.services.providers.i_llm_provider import ILLMProvider
 from app.sessions import ProjectMetadata, Session
 
@@ -14,12 +15,42 @@ def run_turn(session: Session, request: SessionEstimationRequest, provider: ILLM
     El llamador debe tener `session.lock`. El turno solo se guarda si el LLM responde:
     si falla, la sesión queda como estaba y el cliente puede reintentar.
     """
+    observed = ObservedProvider(provider)
     system, user = render_session_prompt(request, session.metadata)
-    estimation = provider.process_chat(system, session.history.chat_messages(user))
+    estimation = observed.process_chat(system, session.history.chat_messages(user))
     session.history.add_turn(user, estimation)
     session.turn_count += 1
-    session.metadata = _updated_metadata(session.metadata, user, estimation, provider)
+    session.metadata = _updated_metadata(session.metadata, user, estimation, observed)
+    session.last_observation = _observe_turn(session, user, request, observed)
     return estimation
+
+
+def _observe_turn(
+    session: Session, user: str, request: SessionEstimationRequest, observed: ObservedProvider
+) -> TurnObservation:
+    """Agrega en un único evento `turn_observed` lo que antes eran logs sueltos.
+
+    Un evento por turno permite volcar un CSV de una pasada y correlacionar
+    `messages_in_window` con `cost_usd` sin reconciliar marcas de tiempo.
+    """
+    observation = TurnObservation(
+        turn_index=session.turn_count,
+        session_id=session.id,
+        enriched_transcript_chars=len(user),
+        attachments_total_chars=sum(len(attachment.text) for attachment in request.attachments),
+        messages_in_window=len(session.history.chat_messages()),
+        anchors_count=0,  # sin anclas en este servicio
+        summary_chars=0,  # sin summarizer en este servicio
+        tokens_in=observed.tokens_in,
+        tokens_out=observed.tokens_out,
+        cost_usd=observed.cost_usd,
+        latency_ms=observed.latency_ms,
+        cache_hit_kind="none",  # sin caches en este servicio
+        last_resolved_tier="n/a",  # sin tier dinámico en este servicio
+        llm_calls=len(observed.calls),
+    )
+    logger.info("turn_observed", **observation.model_dump())
+    return observation
 
 
 def _updated_metadata(

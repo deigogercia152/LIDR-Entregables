@@ -80,3 +80,45 @@ class SessionEstimationResponse(EstimationResponse):
     session_id: str
     turn: int
     project_metadata: ProjectMetadata
+    observation: "TurnObservation | None" = None
+
+
+class TurnObservation(BaseModel):
+    """Una fila de observabilidad por turno: lo que emite el evento `turn_observed`.
+
+    `tokens_in`, `tokens_out`, `cost_usd` y `latency_ms` son los totales del turno
+    (estimación + extractor de metadata). `anchors_count`, `summary_chars`,
+    `cache_hit_kind` y `last_resolved_tier` existen por contrato de observación pero
+    este servicio aún no tiene anclas, summarizer, caches ni tier dinámico: valen
+    0, 0, "none" y "n/a".
+    """
+
+    turn_index: int
+    session_id: str
+    enriched_transcript_chars: int
+    attachments_total_chars: int
+    messages_in_window: int
+    anchors_count: int
+    summary_chars: int
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float
+    latency_ms: float
+    cache_hit_kind: str
+    last_resolved_tier: str
+    llm_calls: int
+
+
+class SessionSnapshot(BaseModel):
+    """Estado de una sesión para depuración y para las métricas de memoria."""
+
+    session_id: str
+    message_count: int
+    anchors_count: int
+    summary_chars: int
+    summary: str
+    anchors: list[str]
+    last_resolved_tier: str
+    project_metadata: ProjectMetadata
+    window_text: str
+    last_observation: TurnObservation | None

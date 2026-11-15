@@ -168,14 +168,29 @@ número de turno y la memoria del proyecto tras este turno:
     "assumed_team_size": 3,
     "mentioned_technologies": ["Django", "Redis"],
     "agreed_scope": "Web de reservas de pistas con pago online y app móvil"
+  },
+  "observation": {
+    "turn_index": 2, "session_id": "288e812e-...", "enriched_transcript_chars": 5312,
+    "attachments_total_chars": 0, "messages_in_window": 4, "anchors_count": 0,
+    "summary_chars": 0, "tokens_in": 4353, "tokens_out": 1478, "cost_usd": 0.0011743,
+    "latency_ms": 6371.9, "cache_hit_kind": "none", "last_resolved_tier": "n/a", "llm_calls": 2
   }
 }
 ```
+
+`observation` es el mismo contenido que el evento `turn_observed` del log (ver
+[Observabilidad y stress test](#observabilidad-y-stress-test)).
 
 Errores: `404` si la sesión no existe, `415` si un adjunto no es PDF ni `.docx`,
 `413` si un adjunto supera los límites, `422` si el formulario no es válido o un
 adjunto no se puede leer, y `503` si el proveedor no está configurado. Un turno
 que falla no se guarda: la sesión queda como estaba y se puede reintentar.
+
+### `GET /api/v1/sessions/{session_id}`
+
+Estado de depuración de la sesión: `message_count`, `anchors_count`, `summary_chars`,
+`summary`, `anchors`, `last_resolved_tier`, `project_metadata`, `window_text` (los
+mensajes aún dentro de la ventana) y `last_observation`. `404` si no existe.
 
 ## Memoria conversacional
 
@@ -294,6 +309,41 @@ contener datos del cliente):
 
 Dos peticiones con el mismo hash recibieron exactamente el mismo prompt.
 
+## Observabilidad y stress test
+
+Cada turno emite **un único** evento estructurado `turn_observed` con `turn_index`,
+`session_id`, `enriched_transcript_chars`, `attachments_total_chars`,
+`messages_in_window`, `anchors_count`, `summary_chars`, `tokens_in`, `tokens_out`,
+`cost_usd`, `latency_ms`, `cache_hit_kind` y `last_resolved_tier` (más `llm_calls`).
+Tokens, coste y latencia son **totales del turno**: estimación + extractor de metadata,
+medidos por `ObservedProvider` ([`app/services/llm_wrapper.py`](app/services/llm_wrapper.py))
+con la tabla de precios `MODEL_COSTS`.
+
+Este servicio todavía no tiene anclas, summarizer, caches ni tier dinámico, así que
+`anchors_count`, `summary_chars`, `cache_hit_kind` y `last_resolved_tier` valen
+`0`, `0`, `"none"` y `"n/a"`: el contrato de observación ya está, el valor llegará con
+esas piezas.
+
+El baseline del CAG vive en [`evals/stress/`](evals/stress/):
+
+```bash
+uv run uvicorn app.main:app &                       # el servicio, con su .env
+uv run python -m evals.stress.run --http http://localhost:8000 \
+    --scenarios growing,pivot,contradiction \
+    --attachment-sizes 0,5,20,50,100 --repeats 3 \
+    --output evals/stress/results.csv               # una fila por turno
+uv run python -m evals.stress.report evals/stress/results.csv   # tablas del reporte
+```
+
+- `scenarios.py`: tres perfiles de 20 turnos (el proyecto crece, pivota, se contradice)
+  con su fact-tracker.
+- `fixtures/build_pdfs.py`: PDFs sintéticos determinísticos (no se comitean).
+- `metrics.py`: `LatencyBudgetMetric`, `CostBudgetMetric` y `MemoryDriftMetric`
+  (coincidencia exacta sin distinguir mayúsculas, sin LLM-as-judge).
+- `REPORT.md`: tablas, curvas y lectura. Mide; no optimiza ninguna constante.
+
+La corrida llama al LLM configurado: cuesta unos céntimos y tarda decenas de minutos.
+
 ## Pruebas
 
 Ejecuta las pruebas localmente, sin llamar a OpenAI ni a Anthropic:
@@ -316,6 +366,10 @@ uv run pytest
 - `tests/test_providers_chat.py`: `process_chat` y que el payload de una sola
   petición no cambia respecto a antes.
 - `tests/test_streamlit_app.py`: el cliente con `AppTest` y el HTTP simulado.
+- `tests/test_turn_observed.py`: el evento `turn_observed`, los totales por turno y el
+  snapshot `GET /sessions/{id}`.
+- `tests/test_stress_*.py`: métricas, escenarios, PDFs, runner (con un LLM simulado) y
+  generador de tablas del stress test.
 - `tests/test_streaming.py`: streaming de los proveedores con el SDK simulado.
 
 Ningún test llama al LLM: usan un doble que distingue la llamada de estimación de la

@@ -11,6 +11,8 @@ from app.schemas import (
     ProjectType,
     SessionEstimationRequest,
     SessionEstimationResponse,
+    SessionSnapshot,
+    TurnObservation,
 )
 from app.services.llm_services import get_llm_provider
 from app.services.session_service import run_turn
@@ -29,6 +31,28 @@ class SessionCreated(BaseModel):
 @router.post("/sessions", response_model=SessionCreated, status_code=201)
 def create_session() -> SessionCreated:
     return SessionCreated(session_id=session_store.create(settings.session_max_turns).id)
+
+
+@router.get("/sessions/{session_id}", response_model=SessionSnapshot)
+def get_session(session_id: str) -> SessionSnapshot:
+    """Estado de depuración de la sesión: memoria, ventana y última observación."""
+    session = session_store.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada: crea una con POST /sessions.")
+    with session.lock:
+        observation = session.last_observation
+        return SessionSnapshot(
+            session_id=session.id,
+            message_count=len(session.history.chat_messages()),
+            anchors_count=0,
+            summary_chars=0,
+            summary="",
+            anchors=[],
+            last_resolved_tier="n/a",
+            project_metadata=session.metadata,
+            window_text="\n".join(m["content"] for m in session.history.chat_messages()),
+            last_observation=observation if isinstance(observation, TurnObservation) else None,
+        )
 
 
 @router.post("/sessions/{session_id}/estimate", response_model=SessionEstimationResponse)
@@ -78,4 +102,5 @@ def estimate_in_session(
             session_id=session.id,
             turn=session.turn_count,
             project_metadata=session.metadata,
+            observation=session.last_observation,
         )

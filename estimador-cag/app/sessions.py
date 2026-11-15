@@ -133,6 +133,8 @@ class Session:
         # Turnos totales de la sesión. No sale de `len(history)`, que se queda en `max_turns`.
         self.turn_count = 0
         self.metadata = ProjectMetadata()
+        # Última observación del turno (`schemas.TurnObservation`); `object` evita un import circular.
+        self.last_observation: object | None = None
         # Serializa los turnos de una misma sesión: dos peticiones simultáneas
         # leerían el mismo historial y una pisaría el turno de la otra.
         self.lock = threading.Lock()

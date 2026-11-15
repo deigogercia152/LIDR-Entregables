@@ -13,3 +13,5 @@ uv.lock
 
 # Streamlit secrets
 .streamlit/secrets.toml
+# Stress test: PDFs regenerados por evals/stress/fixtures/build_pdfs.py
+evals/stress/fixtures/*.pdf

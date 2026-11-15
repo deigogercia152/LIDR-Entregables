@@ -23,6 +23,13 @@ class AnthropicLLMProvider(ILLMProvider):
 			system=system_message,
 			messages=messages,
 		)
+		usage = getattr(response, "usage", None)
+		if usage:
+			self.last_usage = LLMUsage(
+				model=self.model,
+				input_tokens=usage.input_tokens,
+				output_tokens=usage.output_tokens,
+			)
 		text = "".join(
 			block.text for block in response.content if getattr(block, "type", None) == "text"
 		)
