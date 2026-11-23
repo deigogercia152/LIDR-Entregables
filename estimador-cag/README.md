@@ -49,8 +49,11 @@ OPENAI_API_KEY=tu-clave-de-openai
 
 Para usar Anthropic, configura `LLM_PROVIDER=anthropic`, indica un modelo de
 Anthropic en `LLM_MODEL` (por ejemplo `claude-haiku-4-5-20251001`) y
-proporciona `ANTHROPIC_API_KEY`. Solo se necesita la clave del proveedor
-seleccionado, y solo la usa el servicio: el cliente no la ve nunca.
+proporciona `ANTHROPIC_API_KEY`. Para las estimaciones solo se necesita la clave
+del proveedor seleccionado, y solo la usa el servicio: el cliente no la ve nunca.
+
+El pipeline de embeddings (más abajo) usa siempre OpenAI (`text-embedding-3-small`),
+así que necesita `OPENAI_API_KEY` aunque `LLM_PROVIDER` sea `anthropic`.
 
 ## Cómo se levanta
 
@@ -344,6 +347,102 @@ uv run python -m evals.stress.report evals/stress/results.csv   # tablas del rep
 
 La corrida llama al LLM configurado: cuesta unos céntimos y tarda decenas de minutos.
 
+## Embeddings: pipeline de ingesta de presupuestos
+
+Primer paso hacia la búsqueda semántica: convertir presupuestos históricos (JSON) en
+vectores. Vive en [`app/embedding_pipeline/`](app/embedding_pipeline/) y **no persiste
+nada**: los vectores se generan en memoria y se devuelven por HTTP. Necesita
+`OPENAI_API_KEY`.
+
+```
+app/embedding_pipeline/
+├── schemas.py   # Budget, BudgetComponent, Chunk, EmbeddedChunk, IngestRequest/Response
+├── chunker.py   # JSONStructuralChunker: un componente del presupuesto = un chunk
+├── embedder.py  # OpenAIEmbedder: text-embedding-3-small, batches de 100, reintentos
+├── router.py    # POST /embeddings/ingest
+└── SANITY_CHECK.md
+scripts/compare.py   # similitud coseno entre dos textos
+data/budgets_sample.json
+```
+
+**Chunking.** Un componente = un chunk, sin overlap ni partir descripciones largas. El
+texto que se embebe lleva delante el contexto del presupuesto padre (proyecto, sector,
+año y tecnología principal) para que «Authentication backend» no pierda a qué cliente
+pertenece. Los campos filtrables (`budget_id`, `component_id`, `client_sector`,
+`main_technology`, `year`, `complexity`, `estimated_hours`) viajan en `metadata` y
+**no** se embeben. El `chunk_id` es `{budget_id}::{component_id}`.
+
+**Embedder.** Una llamada a la API por cada 100 chunks (no una por chunk). Ante
+`RateLimitError` reintenta 3 veces esperando 1, 2 y 4 segundos; cualquier otro error
+sube tal cual. Cada batch se registra con structlog (`embedding_batch`: chunks, tokens y
+latencia). Un chunk que supera los 8191 tokens del modelo se rechaza antes de llamar a
+la API (no se parte). El precio (`PRICE_PER_MILLION_TOKENS_USD`) es una constante de
+módulo que conviene revisar: cambia con el tiempo.
+
+### `POST /embeddings/ingest`
+
+Recibe `{"budgets": [...]}` (entre 1 y 100 presupuestos, con el esquema de
+[`data/budgets_sample.json`](data/budgets_sample.json)) y devuelve los chunks
+vectorizados y las estadísticas. También se puede probar desde `/docs`.
+
+```bash
+# El .json del sample es una lista; el endpoint espera {"budgets": [...]}
+python3 -c 'import json; print(json.dumps({"budgets": json.load(open("data/budgets_sample.json"))}))' \
+  | curl -s -X POST http://127.0.0.1:8000/embeddings/ingest \
+      -H "Content-Type: application/json" -d @- | python3 -m json.tool | head -40
+```
+
+```json
+{
+  "chunks": [{"chunk_id": "BUD-2024-014::AUTH-001", "text": "[Project: ...", "metadata": {"...": "..."},
+              "token_count": 107, "embedding": [0.0123, "... 1536 floats"]}],
+  "stats": {"total_budgets": 15, "total_chunks": 48, "total_tokens": 4438, "estimated_cost_usd": 8.9e-05}
+}
+```
+
+Códigos: `200`; `422` si el body no cumple el esquema (incluidos `budget_id::component_id`
+repetidos) o un chunk supera el límite de tokens; `500` con el mensaje genérico
+`Embedding service error` si falla la API de OpenAI (el detalle solo va a los logs);
+`503` si falta `OPENAI_API_KEY`.
+
+### `scripts/compare.py`
+
+Embebe dos textos y muestra su similitud coseno (calculada a mano con la biblioteca
+estándar, sin numpy):
+
+```bash
+# Fuera del contenedor, con el .env cargado (desde este directorio)
+uv run python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+
+# Dentro del contenedor del servicio (si lo ejecutas con Docker Compose)
+docker compose exec servicio_ia python scripts/compare.py --text-a "..." --text-b "..."
+```
+
+```
+Text A: OAuth 2.0 authentication backend for fintech
+Text B: JWT-based authorization service for banking app
+Cosine similarity: 0.xxxx
+```
+
+> Este repositorio **no incluye** `Dockerfile` ni `docker-compose.yml`: la forma «dentro
+> del contenedor» es válida si tu servicio ya corre en uno. El script no depende de
+> Docker: solo necesita `OPENAI_API_KEY` en el entorno o en `.env`.
+
+Los resultados de las tres parejas de prueba están en
+[`SANITY_CHECK.md`](app/embedding_pipeline/SANITY_CHECK.md).
+
+### Sobre el dataset de ejemplo
+
+`data/budgets_sample.json` son **15 presupuestos sintéticos** (48 componentes; finance,
+ecommerce, healthcare e industrial; ocho stacks distintos) escritos para este ejercicio
+con el esquema del enunciado: el fichero oficial del programa no estaba disponible. Si
+tienes el original, sustitúyelo sin tocar nada más. Una advertencia: `complexity` está
+validada como `low | medium | high`, y `sector` es texto libre; si el dataset oficial
+usara otros valores de complejidad, habría que ampliar el `Literal` de
+`BudgetComponent` en [`schemas.py`](app/embedding_pipeline/schemas.py).
+
 ## Pruebas
 
 Ejecuta las pruebas localmente, sin llamar a OpenAI ni a Anthropic:
@@ -371,8 +470,12 @@ uv run pytest
 - `tests/test_stress_*.py`: métricas, escenarios, PDFs, runner (con un LLM simulado) y
   generador de tablas del stress test.
 - `tests/test_streaming.py`: streaming de los proveedores con el SDK simulado.
+- `tests/embedding_pipeline/`: chunker (formato del texto, metadata, tokens), embedder
+  (batches de 100, orden de los vectores, reintentos 1-2-4 s, límite de tokens, logs),
+  router (200/422/500/503, sin filtrar detalles) y validez del dataset de ejemplo.
+- `tests/test_compare_script.py`: similitud coseno y salida del CLI.
 
-Ningún test llama al LLM: usan un doble que distingue la llamada de estimación de la
+Ningún test llama al LLM ni a la API de embeddings: usan un doble que distingue la llamada de estimación de la
 del extractor. Por eso no pueden demostrar que el modelo real mantiene la coherencia
 entre turnos; eso solo se ve con una conversación real.
 
