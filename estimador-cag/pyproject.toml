@@ -18,6 +18,7 @@ dependencies = [
     "python-multipart>=0.0.32",
     "pypdf>=7.0.0",
     "python-docx>=1.2.0",
+    "tiktoken>=0.7.0",
 ]
 
 [dependency-groups]
