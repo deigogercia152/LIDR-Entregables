@@ -416,7 +416,7 @@ uv run python scripts/compare.py \
   --text-a "OAuth 2.0 authentication backend for fintech" \
   --text-b "JWT-based authorization service for banking app"
 
-# Dentro del contenedor del servicio (si lo ejecutas con Docker Compose)
+# Dentro del contenedor del servicio (ver Docker Compose más abajo)
 docker compose exec servicio_ia python scripts/compare.py --text-a "..." --text-b "..."
 ```
 
@@ -426,9 +426,18 @@ Text B: JWT-based authorization service for banking app
 Cosine similarity: 0.xxxx
 ```
 
-> Este repositorio **no incluye** `Dockerfile` ni `docker-compose.yml`: la forma «dentro
-> del contenedor» es válida si tu servicio ya corre en uno. El script no depende de
-> Docker: solo necesita `OPENAI_API_KEY` en el entorno o en `.env`.
+Para la forma «dentro del contenedor», el repo incluye `Dockerfile` y `docker-compose.yml`
+(servicio `servicio_ia`, puerto 8000). La clave `OPENAI_API_KEY` se lee de `.env` al
+arrancar y **no** se copia a la imagen:
+
+```bash
+docker compose build servicio_ia
+docker compose up -d                # API en http://localhost:8000 (y /docs)
+docker compose exec servicio_ia python scripts/compare.py --text-a "..." --text-b "..."
+docker compose down
+```
+
+El script no depende de Docker: solo necesita `OPENAI_API_KEY` en el entorno o en `.env`.
 
 Los resultados de las tres parejas de prueba están en
 [`SANITY_CHECK.md`](app/embedding_pipeline/SANITY_CHECK.md).
