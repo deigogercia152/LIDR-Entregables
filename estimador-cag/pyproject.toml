@@ -8,7 +8,7 @@ dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "pydantic-settings",
-    "openai",
+    "openai>=1.0.0",
     "anthropic",
     "python-dotenv",
     "streamlit>=1.66.1",

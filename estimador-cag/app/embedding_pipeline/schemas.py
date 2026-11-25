@@ -1,3 +1,4 @@
+from collections import Counter
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -50,7 +51,7 @@ class IngestRequest(BaseModel):
     @model_validator(mode="after")
     def chunk_ids_must_be_unique(self) -> "IngestRequest":
         ids = [f"{b.budget_id}::{c.component_id}" for b in self.budgets for c in b.components]
-        duplicated = sorted({chunk_id for chunk_id in ids if ids.count(chunk_id) > 1})
+        duplicated = sorted(chunk_id for chunk_id, n in Counter(ids).items() if n > 1)
         if duplicated:
             raise ValueError(f"Repeated budget_id::component_id: {', '.join(duplicated)}")
         return self

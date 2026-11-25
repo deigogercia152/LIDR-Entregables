@@ -9,6 +9,8 @@ import math
 import sys
 from pathlib import Path
 
+import openai
+
 # `python scripts/compare.py` pone scripts/ en sys.path, no la raíz del proyecto.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -38,7 +40,11 @@ def main(argv: list[str] | None = None, embedder: OpenAIEmbedder | None = None) 
             return 1
         embedder = OpenAIEmbedder(settings.openai_api_key)
 
-    similarity = cosine_similarity(embedder.embed_one(args.text_a), embedder.embed_one(args.text_b))
+    try:
+        similarity = cosine_similarity(embedder.embed_one(args.text_a), embedder.embed_one(args.text_b))
+    except openai.OpenAIError as error:
+        print(f"Error de la API de embeddings: {error}", file=sys.stderr)
+        return 1
     print(f"Text A: {args.text_a}")
     print(f"Text B: {args.text_b}")
     print(f"Cosine similarity: {similarity:.4f}")

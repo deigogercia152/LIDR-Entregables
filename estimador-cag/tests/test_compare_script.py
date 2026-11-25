@@ -1,5 +1,6 @@
 import math
 
+import openai
 import pytest
 
 from scripts import compare
@@ -47,3 +48,16 @@ def test_cli_fails_with_a_clear_message_when_there_is_no_api_key(monkeypatch, ca
 
     assert code == 1
     assert "OPENAI_API_KEY" in capsys.readouterr().err
+
+
+def test_cli_reports_an_api_error_without_a_traceback(capsys) -> None:
+    class FailingEmbedder:
+        def embed_one(self, text: str) -> list[float]:
+            raise openai.OpenAIError("input cannot be an empty string")
+
+    code = compare.main(["--text-a", "", "--text-b", "x"], embedder=FailingEmbedder())
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "input cannot be an empty string" in captured.err
+    assert captured.out == ""
